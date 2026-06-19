@@ -1,0 +1,32 @@
+{
+  "name": "polardb-cold-archiver",
+  "version": "1.0.0",
+  "description": "PolarDB 分布式数据库自动化数据冷备份与归档服务",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["polardb", "archive", "cold-backup", "partition", "migration"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.11.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.13.1",
+    "dayjs": "^1.11.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.5.3",
+    "ts-node": "^10.9.2",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0"
+  }
+}
