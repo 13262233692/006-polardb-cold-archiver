@@ -1,5 +1,3 @@
-import dayjs from 'dayjs';
-import { PoolConnection } from 'mysql2/promise';
 import { dbManager } from '../database';
 import { DatabaseClient, DbRow } from '../database/DatabaseClient';
 import { DataCleaner } from './DataCleaner';
@@ -16,12 +14,14 @@ export class DataMigrator {
   private target: DatabaseClient;
   private cleaner: DataCleaner;
   private batchSize: number;
+  private fetchPageSize: number;
 
   constructor() {
     this.source = dbManager.source;
     this.target = dbManager.target;
     this.cleaner = new DataCleaner();
     this.batchSize = config.archive.batchInsertSize;
+    this.fetchPageSize = config.archive.fetchPageSize;
   }
 
   async migrateTable(table: ArchiveTable, timeRange: TimeRange): Promise<MigrationResult> {
@@ -50,7 +50,11 @@ export class DataMigrator {
 
       const countSql = `SELECT COUNT(*) as cnt FROM \`${table.tableName}\` 
                         WHERE \`${table.partitionColumn}\` >= ? AND \`${table.partitionColumn}\` < ?`;
-      const countResult = await this.source.query(countSql, [timeRange.start, timeRange.end]) as unknown as Array<{ cnt: number }>;
+      const countResult = await this.source.query(
+        countSql,
+        [timeRange.start, timeRange.end],
+        { statementTimeoutMs: 30_000, lockWaitTimeoutSecs: 5 }
+      ) as unknown as Array<{ cnt: number }>;
       const totalRows = countResult[0]?.cnt || 0;
       logger.info(`[${taskId}] 源表待迁移数据量: ${totalRows} 行`);
 
@@ -70,23 +74,18 @@ export class DataMigrator {
       const fetchSql = `SELECT ${table.columns.map(c => `\`${c}\``).join(', ')} FROM \`${table.tableName}\` 
                         WHERE \`${table.partitionColumn}\` >= ? AND \`${table.partitionColumn}\` < ?
                         ORDER BY \`${table.partitionColumn}\` ASC`;
-      const allRows = await this.source.streamQuery(fetchSql, [timeRange.start, timeRange.end]) as unknown as DbRow[];
-      rowsRead = allRows.length;
-      logger.info(`[${taskId}] 已读取 ${rowsRead} 行数据，开始清洗并写入目标库`);
 
-      rowsWritten = await this.target.withTransaction(async (targetConn) => {
-        let written = 0;
-        const cleanedRows = this.cleaner.processBatch(allRows, table.columns);
-
-        for (let i = 0; i < cleanedRows.length; i += this.batchSize) {
-          const batch = cleanedRows.slice(i, i + this.batchSize);
-          const batchCount = await this.target.bulkInsert(targetConn, table.tableName, table.columns, batch);
-          written += batchCount;
-          logger.debug(`[${taskId}] 已写入批次 ${Math.floor(i / this.batchSize) + 1}，累计 ${written}/${cleanedRows.length} 行`);
-        }
-
-        return written;
-      });
+      rowsRead = await this.source.paginatedQuery(
+        fetchSql,
+        [timeRange.start, timeRange.end],
+        this.fetchPageSize,
+        async (pageRows) => {
+          const cleanedRows = this.cleaner.processBatch(pageRows as DbRow[], table.columns);
+          await this.writeBatchToTarget(taskId, table, cleanedRows, rowsWritten);
+          rowsWritten += cleanedRows.length;
+        },
+        { statementTimeoutMs: 60_000, lockWaitTimeoutSecs: 10 }
+      );
 
       logger.info(`[${taskId}] 迁移完成，读取 ${rowsRead} 行，写入 ${rowsWritten} 行，耗时 ${Date.now() - startTime}ms`);
 
@@ -101,6 +100,10 @@ export class DataMigrator {
       };
     } catch (error) {
       logger.error(`[${taskId}] 迁移失败: ${error instanceof Error ? error.message : String(error)}`);
+
+      this.source.logPoolStats();
+      this.target.logPoolStats();
+
       return {
         taskId,
         tableName: table.tableName,
@@ -114,10 +117,35 @@ export class DataMigrator {
     }
   }
 
+  private async writeBatchToTarget(taskId: string, table: ArchiveTable, cleanedRows: DbRow[], alreadyWritten: number): Promise<void> {
+    await this.target.withTransaction(
+      async (targetConn) => {
+        let written = 0;
+        for (let i = 0; i < cleanedRows.length; i += this.batchSize) {
+          const batch = cleanedRows.slice(i, i + this.batchSize);
+          const batchCount = await this.target.bulkInsert(targetConn, table.tableName, table.columns, batch);
+          written += batchCount;
+          logger.debug(
+            `[${taskId}] 已写入批次 ${Math.floor(i / this.batchSize) + 1}，` +
+            `本批 ${batchCount} 行，累计 ${alreadyWritten + written} 行`
+          );
+        }
+      },
+      {
+        statementTimeoutMs: 60_000,
+        lockWaitTimeoutSecs: 10,
+      }
+    );
+  }
+
   async verifyMigration(table: ArchiveTable, timeRange: TimeRange, expectedCount: number): Promise<boolean> {
     const verifySql = `SELECT COUNT(*) as cnt FROM \`${table.tableName}\` 
                        WHERE \`${table.partitionColumn}\` >= ? AND \`${table.partitionColumn}\` < ?`;
-    const targetResult = await this.target.query(verifySql, [timeRange.start, timeRange.end]) as unknown as Array<{ cnt: number }>;
+    const targetResult = await this.target.query(
+      verifySql,
+      [timeRange.start, timeRange.end],
+      { statementTimeoutMs: 30_000, lockWaitTimeoutSecs: 5 }
+    ) as unknown as Array<{ cnt: number }>;
     const actualCount = targetResult[0]?.cnt || 0;
     const match = actualCount >= expectedCount;
     logger.info(`迁移校验 [${table.tableName}]: 期望>=${expectedCount}, 实际=${actualCount}, 结果=${match ? '通过' : '失败'}`);

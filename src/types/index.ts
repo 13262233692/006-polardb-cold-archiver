@@ -31,6 +31,7 @@ export interface CleanResult {
   timeRange: TimeRange;
   rowsDeleted: number;
   partitionDropped: boolean;
+  compensated: boolean;
 }
 
 export interface BatchResult {
@@ -39,9 +40,27 @@ export interface BatchResult {
   totalRowsWritten: number;
   successCount: number;
   failCount: number;
+  compensatedCount: number;
   startTime: Date;
   endTime: Date;
 }
 
 export type DbValue = string | number | boolean | null | Date | Buffer;
 export type DbRow = Record<string, DbValue | undefined>;
+
+export type CompensationAction = 'DROP_PARTITION' | 'DELETE_RANGE';
+
+export interface CompensationRecord {
+  id: string;
+  tableName: string;
+  timeRange: TimeRange;
+  action: CompensationAction;
+  actionDetail: string;
+  retryCount: number;
+  maxRetries: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED' | 'EXHAUSTED';
+  lastError?: string;
+  createdAt: string;
+  nextRetryAt: string;
+  updatedAt: string;
+}

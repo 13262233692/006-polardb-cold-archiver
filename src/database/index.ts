@@ -20,6 +20,11 @@ class DatabaseManager {
     return this._target;
   }
 
+  logAllPoolStats(): void {
+    if (this._source) this._source.logPoolStats();
+    if (this._target) this._target.logPoolStats();
+  }
+
   async closeAll(): Promise<void> {
     logger.info('正在关闭所有数据库连接池...');
     const tasks: Promise<void>[] = [];

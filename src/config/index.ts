@@ -40,6 +40,19 @@ export interface ArchiveConfig {
   batchInsertSize: number;
   streamConcurrency: number;
   dryRun: boolean;
+  fetchPageSize: number;
+  acquireTimeoutMs: number;
+  statementTimeoutMs: number;
+  lockWaitTimeoutSecs: number;
+  ddlTimeoutMs: number;
+}
+
+export interface CompensationConfig {
+  enabled: boolean;
+  maxRetries: number;
+  retryDelayMs: number;
+  retryBackoffMultiplier: number;
+  logDir: string;
 }
 
 export interface ScheduleConfig {
@@ -56,6 +69,7 @@ export interface AppConfig {
   source: DatabaseConfig;
   target: DatabaseConfig;
   archive: ArchiveConfig;
+  compensation: CompensationConfig;
   schedule: ScheduleConfig;
   log: LogConfig;
 }
@@ -83,6 +97,18 @@ export const config: AppConfig = {
     batchInsertSize: parseIntEnv('BATCH_INSERT_SIZE', 1000),
     streamConcurrency: parseIntEnv('STREAM_CONCURRENCY', 4),
     dryRun: parseBoolEnv('DRY_RUN', true),
+    fetchPageSize: parseIntEnv('FETCH_PAGE_SIZE', 5000),
+    acquireTimeoutMs: parseIntEnv('ACQUIRE_TIMEOUT_MS', 30_000),
+    statementTimeoutMs: parseIntEnv('STATEMENT_TIMEOUT_MS', 60_000),
+    lockWaitTimeoutSecs: parseIntEnv('LOCK_WAIT_TIMEOUT_SECS', 10),
+    ddlTimeoutMs: parseIntEnv('DDL_TIMEOUT_MS', 120_000),
+  },
+  compensation: {
+    enabled: parseBoolEnv('COMPENSATION_ENABLED', true),
+    maxRetries: parseIntEnv('COMPENSATION_MAX_RETRIES', 5),
+    retryDelayMs: parseIntEnv('COMPENSATION_RETRY_DELAY_MS', 60_000),
+    retryBackoffMultiplier: parseIntEnv('COMPENSATION_RETRY_BACKOFF_MULTIPLIER', 2),
+    logDir: process.env.COMPENSATION_LOG_DIR || path.join(process.cwd(), 'logs', 'compensation'),
   },
   schedule: {
     cronExpression: process.env.CRON_SCHEDULE || '0 0 2 * * *',
@@ -96,6 +122,9 @@ export const config: AppConfig = {
 
 if (!fs.existsSync(config.log.dir)) {
   fs.mkdirSync(config.log.dir, { recursive: true });
+}
+if (config.compensation.enabled && !fs.existsSync(config.compensation.logDir)) {
+  fs.mkdirSync(config.compensation.logDir, { recursive: true });
 }
 
 export default config;
