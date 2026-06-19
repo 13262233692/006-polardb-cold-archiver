@@ -206,6 +206,11 @@ export class DatabaseClient {
     return (rows[0] as unknown as { cnt: number }).cnt > 0;
   }
 
+  async getTableColumns(table: string): Promise<Array<{ Field: string; Type: string; Null: string; Key: string; Default: unknown; Extra: string }>> {
+    const rows = await this.query<RowDataPacket[]>(`DESCRIBE \`${table}\``);
+    return rows as unknown as Array<{ Field: string; Type: string; Null: string; Key: string; Default: unknown; Extra: string }>;
+  }
+
   get poolStats(): { totalConnections: number; freeConnections: number; queuedRequests: number } {
     const poolAny = this.pool as unknown as {
       _allConnections?: { length: number };

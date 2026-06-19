@@ -1,5 +1,6 @@
 import { Scheduler } from './scheduler';
 import { ArchiveOrchestrator } from './services/ArchiveOrchestrator';
+import { GlacierOrchestrator } from './services/GlacierOrchestrator';
 import { dbManager } from './database';
 import { logger } from './utils/logger';
 
@@ -10,6 +11,17 @@ async function runOnce(): Promise<void> {
     await orchestrator.runArchive();
   } catch (error) {
     logger.error(`归档任务执行失败: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+}
+
+async function runGlacier(): Promise<void> {
+  logger.info('运行模式: 立即执行一次极寒归档管道');
+  const orchestrator = new GlacierOrchestrator();
+  try {
+    await orchestrator.runPipeline();
+  } catch (error) {
+    logger.error(`极寒归档执行失败: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }
@@ -38,6 +50,7 @@ async function main(): Promise<void> {
 
   const args = process.argv.slice(2);
   const runOnceMode = args.includes('--once') || args.includes('-o');
+  const runGlacierMode = args.includes('--glacier') || args.includes('-g');
 
   process.on('uncaughtException', (err) => {
     logger.error(`未捕获的异常: ${err.message}`);
@@ -47,6 +60,13 @@ async function main(): Promise<void> {
   process.on('unhandledRejection', (reason) => {
     logger.error(`未处理的 Promise 拒绝: ${reason instanceof Error ? reason.message : String(reason)}`);
   });
+
+  if (runGlacierMode) {
+    await runGlacier();
+    await dbManager.closeAll();
+    logger.info('极寒归档任务执行完毕，进程退出');
+    return;
+  }
 
   if (runOnceMode) {
     await runOnce();

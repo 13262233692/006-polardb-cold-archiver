@@ -3,3 +3,8 @@ export { DataMigrator } from './DataMigrator';
 export { PartitionCleaner } from './PartitionCleaner';
 export { ArchiveOrchestrator } from './ArchiveOrchestrator';
 export { CompensationLog, compensationLog } from './CompensationLog';
+export { GlacierDetector } from './GlacierDetector';
+export { ParquetExporter } from './ParquetExporter';
+export { OSSUploader } from './OSSUploader';
+export { VirtualStubService } from './VirtualStubService';
+export { GlacierOrchestrator } from './GlacierOrchestrator';
